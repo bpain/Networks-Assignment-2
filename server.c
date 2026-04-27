@@ -90,8 +90,6 @@ int handle6(int socket, uint8_t* buffer, int total_len) {
         ptr += lengths[i] + 1;
     }
 
-    int message_len = total_len - (header_len + ptr);
-    uint8_t *message_ptr = buffer + header_len + ptr;
     int ptr2 = 0;
     for (int i = 0; i < num_handles; i++) {
         uint8_t current_handle[MAXHANDLE];
@@ -152,7 +150,6 @@ int handle4(int socket, uint8_t* buffer, int total_len){
     if(sockets){
         for(int i = 0; i < size; i++){
             if(!(get_socket(handle, len) == sockets[i])){
-                uint8_t current_handle[MAXHANDLE]; 
                 bytes += sendPDU(sockets[i], buffer, total_len); 
             }
         }
