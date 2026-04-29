@@ -7,7 +7,7 @@ LIBS =
 
 OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o
 
-all:   myClient myServer
+all:   myClient server
 
 myClient: cclient.c $(OBJS)
 	$(CC) $(CFLAGS) -o cclient cclient.c PDUops.c $(OBJS) $(LIBS)

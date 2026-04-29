@@ -32,10 +32,6 @@ int portNumber = 0;
 void recvFromClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
 
-void handler(int sig) {
-    close(mainServerSocket);  // Set flag and return immediately
-}
-
 void addNewSocket( int main_socket){
     int clientSocket = tcpAccept(main_socket, DEBUG_FLAG);
     addToPollSet(clientSocket);
@@ -58,12 +54,12 @@ int handle1(int socket, uint8_t* buffer){
     return send_flag(socket, 2);
 }
 
-
+//straightforward increment through then 
 int handle5(int socket, uint8_t* buffer, int total_len){
     uint8_t handle[MAXHANDLE]; 
     uint8_t len1 = buffer[1]; 
     uint8_t len2 = buffer[len1 + 3]; 
-    memcpy(handle, buffer + len1 + 4, len2);     
+    memcpy(handle, buffer + len1 + 4, len2);     //flag + handle1 len + handle1 len bytes + filler 1 + handle 2 len  
     int new_sock = get_socket(handle, len2); 
     if(new_sock){
         return sendPDU(new_sock, buffer, total_len); 
@@ -72,29 +68,27 @@ int handle5(int socket, uint8_t* buffer, int total_len){
     new_buffer[0] = 7; 
     new_buffer[1] = len2; 
     memcpy(new_buffer + 2, handle, len2); 
-    //handle[len2] = 0; 
-    //printf("bad handle %s, len %d", handle, len2); 
     return sendPDU(socket, new_buffer, len2 + 2); 
 
 }
 
-
+//
 int handle6(int socket, uint8_t* buffer, int total_len) {
     uint8_t lengths[9];
     uint8_t sender_length = buffer[1];
     uint8_t num_handles = buffer[2 + sender_length];
-    int header_len = 2 + sender_length + 1;   // type, sender_len, sender, num_handles
+    int header_len = 2 + sender_length + 1;   //type, sender_len, sender, num_handles
     int ptr = 0;
-    for (int i = 0; i < num_handles; i++) {
+    for (int i = 0; i < num_handles; i++) {   //find all length fields and increment ptr to start of message field  
         lengths[i] = buffer[header_len + ptr];
         ptr += lengths[i] + 1;
     }
 
     int ptr2 = 0;
-    for (int i = 0; i < num_handles; i++) {
+    for (int i = 0; i < num_handles; i++) {  //use lengths to get each handle --> socket --> send message or error message 
         uint8_t current_handle[MAXHANDLE];
 
-        memcpy(current_handle, buffer + header_len + ptr2 +1, lengths[i]);
+        memcpy(current_handle, buffer + header_len + ptr2 + 1, lengths[i]);
 
         int current_socket = get_socket(current_handle, lengths[i]);
 
@@ -113,6 +107,7 @@ int handle6(int socket, uint8_t* buffer, int total_len) {
     return 0;
 }
 
+//send new packet for each handle 
 int send_handles(int socket){
     uint8_t* lengths = get_lengths(); 
     uint8_t* handles = get_handles(); 
@@ -129,6 +124,8 @@ int send_handles(int socket){
     return send_flag(socket, 13); 
 }
 
+
+//send packet with number of handles --> extra printf here that I forgot to take out... whoopsie 
 int handle10(int socket){
     uint8_t buffer[5]; 
     buffer[0] = 11; 
@@ -140,6 +137,7 @@ int handle10(int socket){
     return send_handles(socket); 
 }
 
+//pass through message for every handle that isn't the one sent --> if(sockets) is ideally redundant here but you never know
 int handle4(int socket, uint8_t* buffer, int total_len){
     uint32_t size = getsize(); 
     int* sockets = get_sockets(); 
@@ -157,7 +155,7 @@ int handle4(int socket, uint8_t* buffer, int total_len){
     return bytes; 
 }
 
-
+//call helper functions based on flag, increment buffer pointer when it's helpful to just ignore the flag field 
 int parse_message(int socket, uint8_t* buffer, int total_len){
     uint8_t flag = buffer[0]; 
     switch(flag){
@@ -188,11 +186,11 @@ int parse_message(int socket, uint8_t* buffer, int total_len){
     return 0; 
 }
 
+//handle disconect or parse new message when read from 
 void handleClient(int client_socket){
     uint8_t buffer[MAXBUF];
     int recvResult = recvPDU(client_socket, buffer, MAXBUF);
     if(recvResult == 0 || ((recvResult < 0) && (errno == ECONNRESET))){
-        // printf("Client on socket %d disconnected\n", client_socket);
         uint8_t* handle = get_handle(client_socket); 
         if(handle){
             remove_element(handle); 
@@ -202,12 +200,6 @@ void handleClient(int client_socket){
     }
     else{
         parse_message(client_socket, buffer, recvResult); 
-        // for(int i = 0; i <recvResult; i++){
-        //     printf("%c", (char)buffer[i]);
-        // }
-        // fflush(stdout); 
-        
-        //printf("Message received on socket %d, length: %ld Data: %s\n", client_socket, recvResult, buffer);
     }
 }
 
@@ -230,29 +222,28 @@ int checkArgs(int argc, char *argv[])
 	return portNumber;
 }
 
-
-int main(int argc, char *argv[])
-{
-    signal(SIGINT, handler); 
-	portNumber = checkArgs(argc, argv);
-	
-	//create the server socket
-	mainServerSocket = tcpServerSetup(portNumber);
-    setupPollSet();
-    addToPollSet(mainServerSocket);
-    while(1){
+void poll_clients(int main_socket){
+     while(1){
         int socket = pollCall(POLL_WAIT_FOREVER);
-        if(socket == mainServerSocket){
-            addNewSocket(mainServerSocket);
+        if(socket == main_socket){
+            addNewSocket(main_socket);
         }
         else{
             handleClient(socket);
         }
     }
-	/* close the sockets */
+}
+
+//init --> poll
+int main(int argc, char *argv[])
+{
+    portNumber = checkArgs(argc, argv);
+	mainServerSocket = tcpServerSetup(portNumber);
+    setupPollSet();
+    addToPollSet(mainServerSocket);
+    poll_clients(mainServerSocket); 
 	close(clientSocket);
 	close(mainServerSocket);
-	
 	return 0;
 }
 

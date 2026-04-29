@@ -26,7 +26,7 @@
 #include "PDUops.h"
 #include "pollLib.h"
 
-#define MAXBUF 1024
+#define MAXBUF 1400
 #define MAXHANDLE 100
 #define DEBUG_FLAG 1
 
@@ -48,30 +48,20 @@ void handle11(uint8_t* buffer);
 void handle12(uint8_t* buffer); 
 
 
+
 uint8_t handle[100]; 
 uint8_t handle_length; 
 int socketNum; 
 
-void handler(int sig) {
-    close(socketNum);  // Set flag and return immediately
-}
 
-int get_message(char* message){
+int get_message(char* message){ //reused code --> just parses message w/ fgets --> pain in booty when trying to test longer thingamajigs 
 	int message_len;
 	fgets(message, MAXBUF, stdin); 
 	message_len = strlen(message); 
-	if(message_len <= 1){
-		printf("empty message"); 
-		exit(EXIT_FAILURE); 
-	}
-	if(message_len > 1400){
-		printf("message too long"); 
-		exit(EXIT_FAILURE); 
-	}
 	return message_len; 
 }
 
-int get_print_handle(uint8_t* handle, uint8_t* buffer){
+int get_print_handle(uint8_t* handle, uint8_t* buffer){ //print and return handle field --> just reused code a lot 
 	uint8_t len = buffer[0]; 
 	memcpy(handle, buffer + 1, len); 
 	handle[len] = 0; 
@@ -79,7 +69,7 @@ int get_print_handle(uint8_t* handle, uint8_t* buffer){
 	return len;
 }
 
-int main(int argc, char * argv[]){
+int main(int argc, char * argv[]){ // setup/teardown + poll loop code 
 	socketNum = 0;         
 	checkArgs(argc, argv);
 	handle_length = strlen(argv[1]); 
@@ -95,7 +85,7 @@ int main(int argc, char * argv[]){
 	return 0;
 }
 
-int check_message(char* message, int message_len){
+int check_message(char* message, int message_len){ //duh 
 	if(handle[0] != '\n'){
 		fgets(message, MAXBUF, stdin); 
 		message_len = strlen(message); 
@@ -104,14 +94,10 @@ int check_message(char* message, int message_len){
 		printf("empty handle"); 
 		return -1; 
 	}
-	if(message_len <= 1){
-		printf("empty message"); 
-		return -1; 
-	}
 	return 0; 
 }
 
-int M_type(){
+int M_type(){ //get handle + check it + break up into multiple packets if necessary 
 	char target_handle[MAXHANDLE]; 
 	char message[MAXBUF]; 
 	scanf("%s", target_handle );
@@ -124,10 +110,13 @@ int M_type(){
 		printf("empty handle"); 
 		return -1; 
 	}
-	if(message_len <= 1){
+	if(handle_length > 100){
+		printf("handle >100 chars"); 
 		return -1; 
 	}
+
 	message[message_len-1] = 0; //make newline null terminator 
+	//break up message if needed 
 	int ptr = 0; 
 	for(int i = 0; i < message_len/199; i++){
 		send_M_packet((uint8_t*)(target_handle), (uint8_t*)(message+1 + ptr), handle_length, 199, 5);
@@ -139,17 +128,23 @@ int M_type(){
 	return 0;
 }
 
+//
 int B_type(){
 	char message[MAXBUF]; 
 	int message_len =0;
 	fgets(message, MAXBUF, stdin); 
 	message_len = strlen(message);	
-	if(message_len <= 1){
-		printf("empty message"); 
-		return -1; 
-	}
 	message[message_len-1] = 0; 
-	return send_B_packet((uint8_t*)(message+ 1), message_len-2);
+	int ptr = 0; 
+	for(int i = 0; i < message_len/199; i++){
+		send_B_packet((uint8_t*)(message+1 + ptr), 199);
+		ptr += 199; 
+	} 
+	if(message_len%199 != 0 || message_len < 199){
+		send_B_packet((uint8_t*)(message+1), message_len%199);
+	}
+	return 0; 
+	// return send_B_packet((uint8_t*)(message+ 1), message_len-2);
 }
 
 
@@ -169,32 +164,41 @@ int C_type(){
 	for(int i = 0; i < num_handles; i++){
 		scanf("%s", current_value); 
 		length = strlen(current_value); 
-		lengths[i] = length; 
-		memcpy(handles + counter, current_value, length);
-		counter += length; 
-		memset(current_value, 0, MAXHANDLE); 
+		if(length <= 100 && (strncmp(current_value, "\n", MAXHANDLE) != 0)) {
+			lengths[i] = length; 
+			memcpy(handles + counter, current_value, length);
+			counter += length; 
+			memset(current_value, 0, MAXHANDLE); 
+		}
+		else{
+			printf("handle %d too long", i); 
+			return -1; 
+		}
 	}
-	int message_len;
-	// message_len = strlen(message); 
+	int message_len; 
 	if(handle[0] != '\n'){
 		fgets(message, MAXBUF, stdin); 
 		message_len = strlen(message); 
-	} 
-	else{
-		printf("empty handle"); 
-		return -1; 
-	}
-	if(message_len <= 1){
-		printf("empty message"); 
-		return -1; 
-	}
+	} 	
 	message[message_len-1] = 0;  
-	return send_C_packet(num_handles, (uint8_t*)handles, lengths, message_len, (uint8_t*)(message+1)); 
+	int ptr = 0; 
+	for(int i = 0; i < message_len/199; i++){
+		send_C_packet(num_handles, (uint8_t*)(handles), lengths, 199, (uint8_t*)(message+1 + ptr));
+		ptr += 199; 
+	} 
+	if(message_len%199 != 0 || message_len < 199){
+		send_C_packet(num_handles, (uint8_t*)(handles), lengths, message_len%199, (uint8_t*)(message+1));
+	}
+	//return send_C_packet(num_handles, (uint8_t*)handles, lengths, message_len, (uint8_t*)(message+1)); 
 	//}
 	return 0; 
 }
 
 int initClient(){
+	if(handle_length > 100){
+		printf("handle > 100 chars");
+		return -1; 
+	}
 	send_init(); 
 	while(1){
 		int socket = pollCall(POLL_WAIT_FOREVER); 
@@ -229,7 +233,7 @@ void handleClient(){
 			else if(strncmp((char*)buffer, "%B", 3) == 0 || strncmp((char*)buffer, "%b", 3)== 0){
 				B_type();  
 			}
-			else if(strncmp((char*)buffer, "%L", 3) == 0 || strncmp((char*)buffer, "%L", 3)== 0){
+			else if(strncmp((char*)buffer, "%L", 3) == 0 || strncmp((char*)buffer, "%l", 3)== 0){
 				send_L_packet(); 
 			}
 			else{
